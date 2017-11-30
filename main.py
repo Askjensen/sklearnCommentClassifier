@@ -13,10 +13,10 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.svm import LinearSVC
 from nltk.corpus import stopwords
 
-TEMA = 'TEMA'
-NORMAL = 'NORMAL'
-poslabel=TEMA
-n_folds=3
+COMPLAINT = 'KLAGE'
+NORMAL = 'ANDET'
+poslabel=NORMAL
+n_folds=1
 
 
 def build_data_frame(path):
@@ -25,17 +25,46 @@ def build_data_frame(path):
     f = open(path)
     irow=0
     for row in f.readlines():
+        row=row.replace(";)","blinkesmiley")
+        row=row.replace(";-)","blinkesmiley")
         split=row.decode('latin-1').strip().split(';')
         if irow>0:
-            test=0
-            rows.append({'text': split[0], 'class': split[1]})
-            index.append(irow)
+            try:
+                rows.append({'text': split[0], 'class': split[1]})
+                index.append(irow)
+            except IndexError,e:
+                test = 0
         irow+=1
 
     data_frame = DataFrame(rows, index=index)
     return data_frame
 
 
+def runWithoutFolding():
+    global predictions
+    scores = []
+    confusion = numpy.array([[0, 0], [0, 0]])
+    k_fold = KFold(n=len(data), n_folds=2)
+    train_indices = range(0,int(len(data)*5./10.))
+    test_indices = range(int(len(data)*5./10.),len(data)-1)
+    train_text = data.iloc[train_indices]['text'].values
+    train_y = data.iloc[train_indices]['class'].values
+
+    test_text = data.iloc[test_indices]['text'].values
+    test_y = data.iloc[test_indices]['class'].values
+
+    # print 'fitting w cross validation,k_fold: '
+    pipeline.fit(train_text, train_y)
+    # print 'predicting w cross validation,k_fold: '
+    predictions = pipeline.predict(test_text)
+
+    confusion += confusion_matrix(test_y, predictions)
+    score = f1_score(test_y, predictions, pos_label=poslabel)
+    scores.append(score)
+# print('Total documents classified:', len(data))
+    print('Score:', sum(scores) / len(scores))  # ,' Correct Thematic reco:',confusion[1])
+    print('Confusion matrix:')
+    print(confusion / float(len(data)))
 
 def folding(n_folds=6):
     global predictions
@@ -64,7 +93,8 @@ def folding(n_folds=6):
 
 print 'importing data'
 data = DataFrame({'text': [], 'class': []})
-path = 'data/temacomments.csv'
+path = 'data/klager_simpel.csv'
+####### OBS ######## Facebook post har tit ; i smileys - tjek lige om data bliver indlæst korrekt.
 #data = data_frame=DataFrame.from_csv(path, header=0, sep=';', index_col=None, encoding='latin-1')
 data = data.append(build_data_frame(path))
 
@@ -87,7 +117,10 @@ for ngram in range(2,3):
             ('tfidf_transformer', TfidfTransformer()),
             ('classifier', SGDClassifier(loss=loss, penalty='l2', alpha=1e-3, random_state=42, n_jobs=-1))])
         t0 = time.time()
-        folding(n_folds=n_folds)
+        if n_folds==1:
+            runWithoutFolding()
+        else:
+            folding(n_folds=n_folds)
         t1 = time.time()
         print 'Time to calc with 1 to'+str(ngram)+'-gram and td-idf transformation and support vector machine classifier: with loss: '+loss + str(t1 - t0)
 
@@ -101,7 +134,10 @@ pipeline = Pipeline([
 ])
 
 t0 = time.time()
-folding(n_folds=n_folds)
+if n_folds == 1:
+    runWithoutFolding()
+else:
+    folding(n_folds=n_folds)
 t1 = time.time()
 print 'Time to calc with bigram and tf-idf: ' + str(t1 - t0)
 
@@ -112,7 +148,10 @@ pipeline = Pipeline([
     ('tfidf_transformer', TfidfTransformer()),
     ('classifier', LinearSVC(penalty='l2', loss='squared_hinge', tol=0.0001,random_state=42))])
 t0 = time.time()
-folding(n_folds=n_folds)
+if n_folds == 1:
+    runWithoutFolding()
+else:
+    folding(n_folds=n_folds)
 t1 = time.time()
 print 'Time to calc with bigram w. td-idf and linear support vector  classifier: ' + str(t1 - t0)
 
